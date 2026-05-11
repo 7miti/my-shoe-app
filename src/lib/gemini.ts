@@ -1,85 +1,78 @@
-import { OpenRouter } from "@openrouter/sdk";
-
-// Initialize the OpenRouter client using the environment variable
-const getOpenRouter = () => {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-        throw new Error("OPENROUTER_API_KEY is not set. Please add it in Settings > Secrets.");
-    }
-    return new OpenRouter({
-        apiKey,
-        // Optional: Add headers for identification
-        fetch: (url, init) => {
-            return fetch(url, {
-                ...init,
-                headers: {
-                    ...init?.headers,
-                    "HTTP-Referer": "https://ai.studio/build",
-                    "X-Title": "ShoeStock Label Extractor"
-                }
-            });
-        }
-    });
-};
+import Tesseract from 'tesseract.js';
 
 export async function extractShoeLabel(base64Image: string) {
-    const openrouter = getOpenRouter();
-    
-    // Ensure base64 string has the correct data URI prefix
-    const dataUri = base64Image.startsWith('data:') 
-        ? base64Image 
-        : `data:image/jpeg;base64,${base64Image}`;
-
     try {
-        // Switching to a model that is FREE and has VISION capabilities.
-        // Llama 3.3 is text-only; we need Gemini or Pixtral for images.
-        const response = await openrouter.chat.completions.create({
-            model: "google/gemini-2.0-flash-lite-preview-02-05:free",
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        {
-                            type: "text",
-                            text: 'Extract shoe label details into JSON. MANDATORY: UK size (find it next to UK or U.K.). Format your entire response as a single valid JSON object with these keys: {"shoeName": "...", "brand": "...", "euSize": "...", "usSize": "...", "ukSize": "...", "color": "...", "sku": "...", "quantity": "..."}. Do not include markdown code blocks, just the JSON.'
-                        },
-                        {
-                            type: "image_url",
-                            image_url: {
-                                url: dataUri
-                            }
-                        }
-                    ]
-                }
-            ],
-            // Some free models don't support response_format: json_object strictly, 
-            // so we will rely on a clean prompt and manual cleaning if needed.
-        });
+        console.log("Starting local OCR extraction...");
+        const result = await Tesseract.recognize(
+            base64Image,
+            'eng',
+            { logger: m => console.log(m) }
+        );
 
-        if (!response.choices || response.choices.length === 0) {
-            throw new Error("OpenRouter returned no results.");
-        }
+        const text = result.data.text;
+        console.log("Raw OCR Text:", text);
 
-        let content = response.choices[0].message.content;
-        console.log("OpenRouter Response content:", content);
-        
-        if (!content) {
-            throw new Error("AI returned empty content.");
-        }
-
-        // Clean content in case the model ignored directions and added ```json blocks
-        const cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        return JSON.parse(cleaned);
+        return parseOCRText(text);
     } catch (error: any) {
-        console.error("Extraction error:", error);
-        
-        // Handle the "credits" error or other common OpenRouter issues
-        const apiError = error.response?.data?.error?.message || error.message;
-        if (apiError.includes("purchased credits")) {
-            throw new Error("OpenRouter error: Even for free models, some providers require a verified account or a $5 minimum balance. Try checking your OpenRouter credits.");
-        }
-        
-        throw new Error(apiError || "An unexpected error occurred during label extraction.");
+        console.error("OCR Error:", error);
+        throw new Error("Failed to read the label locally. Please try a clearer photo or enter details manually.");
     }
+}
+
+function parseOCRText(text: string) {
+    const lines = text.split('\n').map(l => l.trim());
+    const data = {
+        shoeName: '',
+        brand: '',
+        euSize: '',
+        usSize: '',
+        ukSize: '',
+        color: '',
+        sku: '',
+        quantity: '1',
+    };
+
+    // 1. Detect Brand
+    const brands = ['NIKE', 'ADIDAS', 'PUMA', 'REEBOK', 'NEW BALANCE', 'ASICS', 'VANS', 'CONVERSE', 'SKECHERS', 'JORDAN'];
+    for (const brand of brands) {
+        if (text.toUpperCase().includes(brand)) {
+            data.brand = brand;
+            break;
+        }
+    }
+
+    // 2. Detect Sizes (Look for labels followed by numbers)
+    // UK Size
+    const ukMatch = text.match(/UK\s*[:\-\s]?\s*([0-9]+(?:\.[0-9]+)?|[A-Z]+)/i);
+    if (ukMatch) data.ukSize = ukMatch[1];
+
+    // US Size
+    const usMatch = text.match(/US\s*[:\-\s]?\s*([0-9]+(?:\.[0-9]+)?)/i);
+    if (usMatch) data.usSize = usMatch[1];
+
+    // EU Size
+    const euMatch = text.match(/(?:EU|EUR|FR)\s*[:\-\s]?\s*([0-9]+(?:\.[0-9]+)?)/i);
+    if (euMatch) data.euSize = euMatch[1];
+
+    // 3. Detect SKU (Common patterns: 6-3 digits or strings with dashes)
+    // Example: CU4111-100 or 123456-789
+    const skuMatch = text.match(/([A-Z0-9]{5,10}-[A-Z0-9]{3})/i);
+    if (skuMatch) {
+        data.sku = skuMatch[1].toUpperCase();
+    } else {
+        // Fallback for simple number strings that might be SKU
+        const basicSku = text.match(/(?:ART|SKU|STYLE)\s*[:\-\s]?\s*([A-Z0-9\-]{5,15})/i);
+        if (basicSku) data.sku = basicSku[1].toUpperCase();
+    }
+
+    // 4. Heuristic for Shoe Name
+    // Usually one of the first few lines that isn't the brand
+    const possibleName = lines.find(line => 
+        line.length > 3 && 
+        !brands.some(b => line.toUpperCase().includes(b)) &&
+        !line.match(/[0-9]/) // Simple check: usually names don't start with lots of numbers
+    );
+    if (possibleName) data.shoeName = possibleName;
+
+    return data;
 }
