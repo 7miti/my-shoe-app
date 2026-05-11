@@ -1,0 +1,6 @@
+{
+  "name": "Stockdiscrepancy",
+  "description": "Scan shoe labels using device camera and extract product details via Gemini AI OCR.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
