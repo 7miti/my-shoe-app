@@ -4,7 +4,7 @@ import Home from './components/Home';
 import CameraScanner from './components/CameraScanner';
 import EditResult from './components/EditResult';
 import ShoeList from './components/ShoeList';
-import { extractShoeLabel } from './lib/gemini';
+import { extractShoeLabel } from './lib/ocr';
 import { saveShoe } from './lib/storage';
 import { Loader2 } from 'lucide-react';
 
@@ -62,7 +62,10 @@ export default function App() {
         isProcessing ? (
           <div className="flex flex-col items-center justify-center h-full space-y-4">
             <Loader2 className="animate-spin text-[#6366f1]" size={48} />
-            <div className="text-gray-400 font-medium pb-20">Analyzing shoe label...</div>
+            <div className="text-gray-400 font-medium pb-20 text-center px-6">
+              Scanning locally...<br/>
+              <span className="text-xs opacity-50">(No AI credits used)</span>
+            </div>
           </div>
         ) : (
           <EditResult 
