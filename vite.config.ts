@@ -6,10 +6,12 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    base: '/my-shoe-app/', // <--- ADD THIS LINE (use your exact repo name)
+    // ⚠️ IMPORTANT: Change "my-shoe-app" to your ACTUAL GitHub repository name
+    base: '/my-shoe-app/', 
+    
     plugins:[react(), tailwindcss()],
     define: {
-      // CHANGE THIS LINE to use OPENROUTER instead of GEMINI
+      // This allows your React app to read the OpenRouter key
       'process.env.OPENROUTER_API_KEY': JSON.stringify(env.OPENROUTER_API_KEY),
     },
     resolve: {
@@ -18,6 +20,8 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
+      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
     },
   };
