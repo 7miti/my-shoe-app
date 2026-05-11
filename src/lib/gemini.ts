@@ -31,17 +31,17 @@ export async function extractShoeLabel(base64Image: string) {
         : `data:image/jpeg;base64,${base64Image}`;
 
     try {
-        // We use the requested free model, but note that it might have limited vision support.
-        // If it fails to see the image, we may need to use a vision-specific free model like llama-3.2-11b-vision-instruct:free
+        // Switching to a model that is FREE and has VISION capabilities.
+        // Llama 3.3 is text-only; we need Gemini or Pixtral for images.
         const response = await openrouter.chat.completions.create({
-            model: "meta-llama/llama-3.3-70b-instruct:free",
+            model: "google/gemini-2.0-flash-lite-preview-02-05:free",
             messages: [
                 {
                     role: "user",
                     content: [
                         {
                             type: "text",
-                            text: 'Extract shoe label details into JSON. MANDATORY: UK size (find it next to UK or U.K.). Format: {"shoeName": "...", "brand": "...", "euSize": "...", "usSize": "...", "ukSize": "...", "color": "...", "sku": "...", "quantity": "..."}. If the model cannot "see" the image, return empty values for fields but maintain JSON structure.'
+                            text: 'Extract shoe label details into JSON. MANDATORY: UK size (find it next to UK or U.K.). Format your entire response as a single valid JSON object with these keys: {"shoeName": "...", "brand": "...", "euSize": "...", "usSize": "...", "ukSize": "...", "color": "...", "sku": "...", "quantity": "..."}. Do not include markdown code blocks, just the JSON.'
                         },
                         {
                             type: "image_url",
@@ -52,30 +52,34 @@ export async function extractShoeLabel(base64Image: string) {
                     ]
                 }
             ],
-            response_format: { type: 'json_object' }
+            // Some free models don't support response_format: json_object strictly, 
+            // so we will rely on a clean prompt and manual cleaning if needed.
         });
 
         if (!response.choices || response.choices.length === 0) {
             throw new Error("OpenRouter returned no results.");
         }
 
-        const content = response.choices[0].message.content;
+        let content = response.choices[0].message.content;
         console.log("OpenRouter Response content:", content);
         
         if (!content) {
             throw new Error("AI returned empty content.");
         }
 
-        return JSON.parse(content);
+        // Clean content in case the model ignored directions and added ```json blocks
+        const cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        return JSON.parse(cleaned);
     } catch (error: any) {
         console.error("Extraction error:", error);
         
-        // Handle specific API errors
-        if (error.status === 401 || error.status === 403) {
-            throw new Error("Unauthorized: Your OpenRouter API Key is invalid.");
+        // Handle the "credits" error or other common OpenRouter issues
+        const apiError = error.response?.data?.error?.message || error.message;
+        if (apiError.includes("purchased credits")) {
+            throw new Error("OpenRouter error: Even for free models, some providers require a verified account or a $5 minimum balance. Try checking your OpenRouter credits.");
         }
         
-        const errorMessage = error.message || "An unexpected error occurred during label extraction.";
-        throw new Error(errorMessage);
+        throw new Error(apiError || "An unexpected error occurred during label extraction.");
     }
 }
