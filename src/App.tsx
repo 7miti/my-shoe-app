@@ -27,17 +27,7 @@ export default function App() {
       setExtractedData(data);
     } catch (e: any) {
       console.error("Extraction error:", e);
-      let errorMessage = "Problem extracting data.";
-      
-      // Check for character-heavy JSON or specific quota strings
-      const errorString = JSON.stringify(e);
-      if (errorString.includes("429") || errorString.includes("RESOURCE_EXHAUSTED")) {
-        errorMessage = "The AI is currently busy (Rate Limit reached). Please wait 60 seconds or enter the details manually below.";
-      } else if (errorString.includes("API_KEY") || errorString.includes("Unauthorized")) {
-        errorMessage = "AI Service API Key is missing or invalid. Please check your Settings > Secrets.";
-      } else {
-        errorMessage = typeof e === 'string' ? e : (e.message || "Unknown error during extraction.");
-      }
+      const errorMessage = typeof e === 'string' ? e : (e.message || "Problem reading the label. Please try again or enter details manually.");
 
       alert(errorMessage);
       setExtractedData({});
